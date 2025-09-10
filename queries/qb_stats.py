@@ -1,18 +1,18 @@
 """
 QB Statistics queries for NFL analytics
 """
-import polars as pl
+import pandas as pd
 import duckdb
 from typing import List, Optional
 
 
 def get_qb_stats_by_year(
-    pbp_df: pl.DataFrame,
+    pbp_df: pd.DataFrame,
     seasons: List[int],
     min_attempts: int = 100,
     season_type: str = "REG",
     teams: Optional[List[str]] = None
-) -> pl.DataFrame:
+) -> pd.DataFrame:
     """
     Get QB statistics aggregated by year
     
@@ -27,7 +27,7 @@ def get_qb_stats_by_year(
         DataFrame with QB stats by year
     """
     con = duckdb.connect()
-    con.register("pbp", pbp_df.to_arrow())
+    con.register("pbp", pbp_df)
     
     # Build WHERE clause
     where_conditions = [
@@ -77,15 +77,15 @@ def get_qb_stats_by_year(
     ORDER BY season DESC, avg_epa DESC
     """
     
-    return con.execute(qb_stats_sql).pl()
+    return con.execute(qb_stats_sql).df()
 
 
 def get_qb_seasonal_trends(
-    pbp_df: pl.DataFrame,
+    pbp_df: pd.DataFrame,
     qb_name: str,
     seasons: List[int],
     season_type: str = "REG"
-) -> pl.DataFrame:
+) -> pd.DataFrame:
     """
     Get seasonal trends for a specific QB
     
@@ -99,7 +99,7 @@ def get_qb_seasonal_trends(
         DataFrame with QB trends over seasons
     """
     con = duckdb.connect()
-    con.register("pbp", pbp_df.to_arrow())
+    con.register("pbp", pbp_df)
     
     where_conditions = [
         "play_type = 'pass'",
@@ -128,15 +128,15 @@ def get_qb_seasonal_trends(
     ORDER BY season
     """
     
-    return con.execute(trends_sql).pl()
+    return con.execute(trends_sql).df()
 
 
 def get_qb_comparisons(
-    pbp_df: pl.DataFrame,
+    pbp_df: pd.DataFrame,
     season: int,
     min_attempts: int = 200,
     season_type: str = "REG"
-) -> pl.DataFrame:
+) -> pd.DataFrame:
     """
     Get QB comparisons for a specific season
     
@@ -150,7 +150,7 @@ def get_qb_comparisons(
         DataFrame with QB comparisons
     """
     con = duckdb.connect()
-    con.register("pbp", pbp_df.to_arrow())
+    con.register("pbp", pbp_df)
     
     where_conditions = [
         "play_type = 'pass'",
@@ -197,4 +197,4 @@ def get_qb_comparisons(
     ORDER BY avg_epa DESC
     """
     
-    return con.execute(comparison_sql).pl()
+    return con.execute(comparison_sql).df()

@@ -1,6 +1,6 @@
 # NFL Analytics Dashboard
 
-A comprehensive NFL analytics dashboard built with Streamlit, Polars, and DuckDB.
+A comprehensive NFL analytics dashboard built with Streamlit, Pandas, and DuckDB.
 
 ## Features
 
@@ -30,7 +30,6 @@ uv run app
 ## Technology Stack
 
 - **Streamlit**: Web application framework
-- **Polars**: Fast DataFrame library for data processing
 - **DuckDB**: In-memory analytical database
 - **Plotly**: Interactive visualizations
 - **nfl_data_py**: NFL data access

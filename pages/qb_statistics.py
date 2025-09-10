@@ -5,7 +5,7 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import polars as pl
+import pandas as pd
 from queries.qb_stats import get_qb_stats_by_year, get_qb_seasonal_trends, get_qb_comparisons
 from queries.data_loader import load_pbp_data, get_available_teams, get_available_qbs
 
@@ -89,7 +89,7 @@ def show_season_overview(pbp_data, seasons, min_attempts, season_type, team_filt
         team_filter if team_filter else None
     )
     
-    if qb_stats.height == 0:
+    if len(qb_stats) == 0:
         st.warning("No data found with current filters.")
         return
     
@@ -121,10 +121,10 @@ def show_season_overview(pbp_data, seasons, min_attempts, season_type, team_filt
         # EPA vs Success Rate scatter
         if len(seasons) == 1:
             season = seasons[0]
-            season_data = qb_stats.filter(pl.col("season") == season)
+            season_data = qb_stats[qb_stats["season"] == season]
             
             fig = px.scatter(
-                season_data.to_pandas(),
+                season_data,
                 x="success_rate",
                 y="avg_epa",
                 hover_data=["qb_name", "team", "attempts"],
@@ -136,11 +136,11 @@ def show_season_overview(pbp_data, seasons, min_attempts, season_type, team_filt
     
     with col2:
         # Top QBs by EPA
-        if qb_stats.height > 0:
+        if len(qb_stats) > 0:
             top_qbs = qb_stats.head(15)
             
             fig = px.bar(
-                top_qbs.to_pandas(),
+                top_qbs,
                 x="avg_epa",
                 y="qb_name",
                 color="season",
@@ -171,7 +171,7 @@ def show_qb_comparison(pbp_data, seasons, min_attempts, season_type, team_filter
         season_type
     )
     
-    if comparison_data.height == 0:
+    if len(comparison_data) == 0:
         st.warning(f"No data found for {comparison_season} with current filters.")
         return
     
@@ -199,11 +199,11 @@ def show_qb_comparison(pbp_data, seasons, min_attempts, season_type, team_filter
     
     top_qbs_for_radar = comparison_data.head(6)
     
-    if top_qbs_for_radar.height > 0:
+    if len(top_qbs_for_radar) > 0:
         # Create radar chart
         fig = go.Figure()
         
-        for row in top_qbs_for_radar.iter_rows(named=True):
+        for _, row in top_qbs_for_radar.iterrows():
             fig.add_trace(go.Scatterpolar(
                 r=[
                     row['avg_epa'] * 10,  # Scale EPA for visibility
@@ -253,7 +253,7 @@ def show_individual_trends(pbp_data, seasons, season_type):
             season_type
         )
         
-        if trends_data.height == 0:
+        if len(trends_data) == 0:
             st.warning(f"No data found for {selected_qb} in selected seasons.")
             return
         
@@ -274,13 +274,13 @@ def show_individual_trends(pbp_data, seasons, season_type):
         )
         
         # Trends visualization
-        if trends_data.height > 1:
+        if len(trends_data) > 1:
             col1, col2 = st.columns(2)
             
             with col1:
                 # EPA trend
                 fig = px.line(
-                    trends_data.to_pandas(),
+                    trends_data,
                     x="season",
                     y="avg_epa",
                     title=f"{selected_qb} - EPA per Play Trend",
@@ -292,7 +292,7 @@ def show_individual_trends(pbp_data, seasons, season_type):
             with col2:
                 # Success rate trend
                 fig = px.line(
-                    trends_data.to_pandas(),
+                    trends_data,
                     x="season",
                     y="success_rate",
                     title=f"{selected_qb} - Success Rate Trend",

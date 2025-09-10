@@ -2,14 +2,14 @@
 Skill Position Player Statistics queries for NFL analytics
 Covers Wide Receivers, Tight Ends, and Running Backs
 """
-import polars as pl
+import pandas as pd
 import duckdb
 import streamlit as st
 from typing import List, Optional
 
 
 @st.cache_data(show_spinner=True)
-def load_roster_data(years: List[int]) -> pl.DataFrame:
+def load_roster_data(years: List[int]) -> pd.DataFrame:
     """
     Load roster data to get player positions
     
@@ -17,7 +17,7 @@ def load_roster_data(years: List[int]) -> pl.DataFrame:
         years: List of years to load
         
     Returns:
-        Polars DataFrame with player roster information
+        Pandas DataFrame with player roster information
     """
     import nfl_data_py as nfl
     
@@ -25,43 +25,42 @@ def load_roster_data(years: List[int]) -> pl.DataFrame:
     roster_dfs = []
     for year in years:
         try:
-            roster_pdf = nfl.import_rosters([year])
-            roster_dfs.append(pl.from_pandas(roster_pdf))
+            roster_pdf = nfl.import_seasonal_rosters([year])
+            roster_dfs.append(roster_pdf)
         except Exception:
             # If roster data is not available for a year, skip it
             continue
     
     if not roster_dfs:
         # Return empty DataFrame with expected columns if no data
-        return pl.DataFrame({
-            "player_name": [],
-            "player_id": [],
-            "position": [],
-            "season": []
+        return pd.DataFrame({
+            "player_name": pd.Series([], dtype=str),
+            "player_id": pd.Series([], dtype=str),
+            "position": pd.Series([], dtype=str),
+            "season": pd.Series([], dtype=int)
         })
     
     # Combine all roster data
-    roster_df = pl.concat(roster_dfs, how="vertical_relaxed")
+    roster_df = pd.concat(roster_dfs, ignore_index=True)
     
-    # Clean and standardize position data
-    roster_df = roster_df.with_columns([
-        pl.col("full_name").alias("player_name"),
-        pl.col("gsis_id").alias("player_id"),
-        pl.col("position").cast(pl.Utf8),
-        pl.col("season").cast(pl.Int32)
-    ])
+    # Clean and standardize position data - no need to rename, columns already correct
+    # Handle null values and ensure proper string type for position
+    roster_df["position"] = roster_df["position"].fillna("UNK").astype(str)
+    roster_df["season"] = pd.to_numeric(roster_df["season"], errors="coerce").astype(int)
+    roster_df["player_name"] = roster_df["player_name"].fillna("").astype(str)
+    roster_df["player_id"] = roster_df["player_id"].fillna("").astype(str)
     
-    return roster_df.select(["player_name", "player_id", "position", "season"])
+    return roster_df[["player_name", "player_id", "position", "season"]]
 
 
 def get_skill_position_stats_by_year(
-    pbp_df: pl.DataFrame,
+    pbp_df: pd.DataFrame,
     seasons: List[int],
     positions: List[str],
     min_touches: int = 50,
     season_type: str = "REG",
     teams: Optional[List[str]] = None
-) -> pl.DataFrame:
+) -> pd.DataFrame:
     """
     Get skill position player statistics aggregated by year
     
@@ -79,9 +78,11 @@ def get_skill_position_stats_by_year(
     # Load roster data to get player positions
     roster_df = load_roster_data(seasons)
     
+    # Data types are already handled in load_roster_data function
+    
     con = duckdb.connect()
-    con.register("pbp", pbp_df.to_arrow())
-    con.register("roster", roster_df.to_arrow())
+    con.register("pbp", pbp_df)
+    con.register("roster", roster_df)
     
     # Build WHERE clause
     where_conditions = [
@@ -99,10 +100,15 @@ def get_skill_position_stats_by_year(
     
     # Create position filter based on selection
     if not positions:
-        return pl.DataFrame()
+        return pd.DataFrame()
+    
+    # Automatically include TE when WR is selected since TEs are classified with WRs
+    expanded_positions = positions.copy()
+    if 'WR' in positions and 'TE' not in positions:
+        expanded_positions.append('TE')
     
     # Convert positions to SQL IN clause
-    position_list = "'" + "','".join(positions) + "'"
+    position_list = "'" + "','".join(expanded_positions) + "'"
     
     skill_stats_sql = f"""
     WITH player_stats AS (
@@ -212,16 +218,16 @@ def get_skill_position_stats_by_year(
     ORDER BY season DESC, avg_epa DESC
     """
     
-    return con.execute(skill_stats_sql).pl()
+    return con.execute(skill_stats_sql).df()
 
 
 def get_skill_position_comparisons(
-    pbp_df: pl.DataFrame,
+    pbp_df: pd.DataFrame,
     season: int,
     positions: List[str],
     min_touches: int = 75,
     season_type: str = "REG"
-) -> pl.DataFrame:
+) -> pd.DataFrame:
     """
     Get skill position player comparisons for a specific season
     
@@ -239,8 +245,8 @@ def get_skill_position_comparisons(
     roster_df = load_roster_data([season])
     
     con = duckdb.connect()
-    con.register("pbp", pbp_df.to_arrow())
-    con.register("roster", roster_df.to_arrow())
+    con.register("pbp", pbp_df)
+    con.register("roster", roster_df)
     
     where_conditions = [f"p.season = {season}"]
     
@@ -250,9 +256,14 @@ def get_skill_position_comparisons(
     where_sql = " AND ".join(where_conditions)
     
     if not positions:
-        return pl.DataFrame()
+        return pd.DataFrame()
     
-    position_list = "'" + "','".join(positions) + "'"
+    # Automatically include TE when WR is selected since TEs are classified with WRs
+    expanded_positions = positions.copy()
+    if 'WR' in positions and 'TE' not in positions:
+        expanded_positions.append('TE')
+    
+    position_list = "'" + "','".join(expanded_positions) + "'"
     
     comparison_sql = f"""
     WITH player_stats AS (
@@ -355,15 +366,15 @@ def get_skill_position_comparisons(
     ORDER BY avg_epa DESC
     """
     
-    return con.execute(comparison_sql).pl()
+    return con.execute(comparison_sql).df()
 
 
 def get_skill_position_trends(
-    pbp_df: pl.DataFrame,
+    pbp_df: pd.DataFrame,
     player_name: str,
     seasons: List[int],
     season_type: str = "REG"
-) -> pl.DataFrame:
+) -> pd.DataFrame:
     """
     Get seasonal trends for a specific skill position player
     
@@ -377,7 +388,7 @@ def get_skill_position_trends(
         DataFrame with player trends over seasons
     """
     con = duckdb.connect()
-    con.register("pbp", pbp_df.to_arrow())
+    con.register("pbp", pbp_df)
     
     where_conditions = [
         f"season IN ({','.join(map(str, seasons))})"
@@ -444,13 +455,13 @@ def get_skill_position_trends(
     ORDER BY season
     """
     
-    return con.execute(trends_sql).pl()
+    return con.execute(trends_sql).df()
 
 
 def get_available_skill_players(
-    pbp_df: pl.DataFrame, 
+    pbp_df: pd.DataFrame, 
     min_touches: int = 25
-) -> pl.DataFrame:
+) -> pd.DataFrame:
     """
     Get list of available skill position players from the data
     
@@ -462,7 +473,7 @@ def get_available_skill_players(
         DataFrame with player names and their primary position
     """
     con = duckdb.connect()
-    con.register("pbp", pbp_df.to_arrow())
+    con.register("pbp", pbp_df)
     
     players_sql = f"""
     WITH receiving_stats AS (
@@ -508,4 +519,4 @@ def get_available_skill_players(
     ORDER BY total_touches DESC
     """
     
-    return con.execute(players_sql).pl()
+    return con.execute(players_sql).df()

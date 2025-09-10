@@ -6,7 +6,7 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import polars as pl
+import pandas as pd
 from queries.skill_position_stats import (
     get_skill_position_stats_by_year, 
     get_skill_position_comparisons, 
@@ -19,7 +19,7 @@ from queries.data_loader import load_pbp_data, get_available_teams
 def show_skill_position_statistics_page():
     """Main skill position statistics page"""
     st.title("🏃‍♂️ Skill Position Statistics")
-    st.markdown("Analyze Wide Receivers, Tight Ends, and Running Backs performance with both rushing and receiving metrics.")
+    st.markdown("Analyze Wide Receivers (including Tight Ends) and Running Backs performance with both rushing and receiving metrics.")
     
     # Sidebar filters
     with st.sidebar:
@@ -28,9 +28,9 @@ def show_skill_position_statistics_page():
         # Position group selection
         position_groups = st.multiselect(
             "Position Groups",
-            options=["WR", "TE", "RB"],
-            default=["WR", "TE", "RB"],
-            help="Select position groups to analyze"
+            options=["WR", "RB"],
+            default=["WR", "RB"],
+            help="Select position groups to analyze (TEs are included with WRs)"
         )
         
         if not position_groups:
@@ -108,7 +108,7 @@ def show_season_overview(pbp_data, seasons, position_groups, min_touches, season
         team_filter if team_filter else None
     )
     
-    if skill_stats.height == 0:
+    if len(skill_stats) == 0:
         st.warning("No data found with current filters.")
         return
     
@@ -150,10 +150,10 @@ def show_season_overview(pbp_data, seasons, position_groups, min_touches, season
         # EPA vs Success Rate scatter by position
         if len(seasons) == 1:
             season = seasons[0]
-            season_data = skill_stats.filter(pl.col("season") == season)
+            season_data = skill_stats[skill_stats["season"] == season]
             
-            # Convert to pandas and ensure size column is numeric
-            season_pandas = season_data.to_pandas()
+            # Ensure size column is numeric
+            season_pandas = season_data.copy()
             season_pandas["total_touches"] = season_pandas["total_touches"].astype(float)
             
             fig = px.scatter(
@@ -170,11 +170,11 @@ def show_season_overview(pbp_data, seasons, position_groups, min_touches, season
     
     with col2:
         # Top players by EPA
-        if skill_stats.height > 0:
+        if len(skill_stats) > 0:
             top_players = skill_stats.head(15)
             
             fig = px.bar(
-                top_players.to_pandas(),
+                top_players,
                 x="avg_epa",
                 y="player_name",
                 color="position_group",
@@ -192,22 +192,24 @@ def show_season_overview(pbp_data, seasons, position_groups, min_touches, season
     
     with col1:
         # Position group performance comparison
-        if skill_stats.height > 0:
+        if len(skill_stats) > 0:
             # Create comparison chart across position groups
             position_summary = (
                 skill_stats
-                .group_by(["position_group", "season"])
-                .agg([
-                    pl.mean("avg_epa").alias("avg_epa"),
-                    pl.mean("success_rate").alias("avg_success_rate"),
-                    pl.mean("total_yards").alias("avg_total_yards")
-                ])
-                .sort(["season", "position_group"])
+                .groupby(["position_group", "season"])
+                .agg({
+                    "avg_epa": "mean",
+                    "success_rate": "mean",
+                    "total_yards": "mean"
+                })
+                .rename(columns={"success_rate": "avg_success_rate", "total_yards": "avg_total_yards"})
+                .reset_index()
+                .sort_values(["season", "position_group"])
             )
             
-            if position_summary.height > 0:
+            if len(position_summary) > 0:
                 fig = px.line(
-                    position_summary.to_pandas(),
+                    position_summary,
                     x="season",
                     y="avg_epa",
                     color="position_group",
@@ -219,20 +221,22 @@ def show_season_overview(pbp_data, seasons, position_groups, min_touches, season
     
     with col2:
         # Touch distribution
-        if skill_stats.height > 0:
+        if len(skill_stats) > 0:
             # Calculate touch distribution by position
             touch_summary = (
                 skill_stats
-                .group_by("position_group")
-                .agg([
-                    pl.mean("targets").alias("avg_targets"),
-                    pl.mean("rushes").alias("avg_rushes")
-                ])
+                .groupby("position_group")
+                .agg({
+                    "targets": "mean",
+                    "rushes": "mean"
+                })
+                .rename(columns={"targets": "avg_targets", "rushes": "avg_rushes"})
+                .reset_index()
             )
             
             fig = go.Figure()
             
-            for row in touch_summary.iter_rows(named=True):
+            for _, row in touch_summary.iterrows():
                 fig.add_trace(go.Bar(
                     name=row["position_group"],
                     x=["Targets", "Rushes"],
@@ -269,7 +273,7 @@ def show_player_comparison(pbp_data, seasons, position_groups, min_touches, seas
         season_type
     )
     
-    if comparison_data.height == 0:
+    if len(comparison_data) == 0:
         st.warning(f"No data found for {comparison_season} with current filters.")
         return
     
@@ -309,16 +313,16 @@ def show_player_comparison(pbp_data, seasons, position_groups, min_touches, seas
         key="radar_position"
     )
     
-    position_data = comparison_data.filter(pl.col("position_group") == position_for_radar).head(8)
+    position_data = comparison_data[comparison_data["position_group"] == position_for_radar].head(8)
     
-    if position_data.height > 0:
+    if len(position_data) > 0:
         col1, col2 = st.columns(2)
         
         with col1:
             # Yards breakdown
             fig = go.Figure()
             
-            for row in position_data.head(6).iter_rows(named=True):
+            for _, row in position_data.head(6).iterrows():
                 fig.add_trace(go.Bar(
                     name=row["player_name"],
                     x=["Receiving", "Rushing"],
@@ -336,8 +340,8 @@ def show_player_comparison(pbp_data, seasons, position_groups, min_touches, seas
         
         with col2:
             # EPA vs Total Yards scatter
-            # Convert to pandas and ensure size column is numeric
-            position_pandas = position_data.to_pandas()
+            # Ensure size column is numeric
+            position_pandas = position_data.copy()
             position_pandas["total_touches"] = position_pandas["total_touches"].astype(float)
             
             fig = px.scatter(
@@ -351,7 +355,7 @@ def show_player_comparison(pbp_data, seasons, position_groups, min_touches, seas
             )
             
             # Add player name annotations
-            for row in position_data.iter_rows(named=True):
+            for _, row in position_data.iterrows():
                 fig.add_annotation(
                     x=row["total_yards"],
                     y=row["avg_epa"],
@@ -370,21 +374,21 @@ def show_individual_trends(pbp_data, seasons, position_groups, season_type):
     # Get available players
     available_players_df = get_available_skill_players(pbp_data, min_touches=50)
     
-    # Filter by selected position groups (map WR/TE back to the broader categories)
+    # Filter by selected position groups
     if position_groups:
         # Convert position groups to match available data
         filter_positions = []
-        if "WR" in position_groups or "TE" in position_groups:
-            filter_positions.append("WR")  # Our available players function returns WR for receivers
+        if "WR" in position_groups:
+            filter_positions.append("WR")  # WR includes TEs since they're classified together
         if "RB" in position_groups:
             filter_positions.append("RB")
         
         if filter_positions:
-            available_players_df = available_players_df.filter(
-                pl.col("primary_position").is_in(filter_positions)
-            )
+            available_players_df = available_players_df[
+                available_players_df["primary_position"].isin(filter_positions)
+            ]
     
-    available_players = available_players_df["player_name"].to_list()
+    available_players = available_players_df["player_name"].tolist()
     
     selected_player = st.selectbox(
         "Select player to analyze",
@@ -394,7 +398,7 @@ def show_individual_trends(pbp_data, seasons, position_groups, season_type):
     
     if selected_player:
         # Show player info
-        player_info = available_players_df.filter(pl.col("player_name") == selected_player).row(0, named=True)
+        player_info = available_players_df[available_players_df["player_name"] == selected_player].iloc[0]
         
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -414,7 +418,7 @@ def show_individual_trends(pbp_data, seasons, position_groups, season_type):
             season_type
         )
         
-        if trends_data.height == 0:
+        if len(trends_data) == 0:
             st.warning(f"No data found for {selected_player} in selected seasons.")
             return
         
@@ -440,7 +444,7 @@ def show_individual_trends(pbp_data, seasons, position_groups, season_type):
         )
         
         # Trends visualization
-        if trends_data.height > 1:
+        if len(trends_data) > 1:
             col1, col2 = st.columns(2)
             
             with col1:
@@ -448,16 +452,16 @@ def show_individual_trends(pbp_data, seasons, position_groups, season_type):
                 fig = go.Figure()
                 
                 fig.add_trace(go.Scatter(
-                    x=trends_data["season"].to_list(),
-                    y=trends_data["receiving_yards"].to_list(),
+                    x=trends_data["season"].tolist(),
+                    y=trends_data["receiving_yards"].tolist(),
                     mode='lines+markers',
                     name='Receiving Yards',
                     line=dict(color='blue')
                 ))
                 
                 fig.add_trace(go.Scatter(
-                    x=trends_data["season"].to_list(),
-                    y=trends_data["rushing_yards"].to_list(),
+                    x=trends_data["season"].tolist(),
+                    y=trends_data["rushing_yards"].tolist(),
                     mode='lines+markers',
                     name='Rushing Yards',
                     line=dict(color='red')
@@ -480,8 +484,8 @@ def show_individual_trends(pbp_data, seasons, position_groups, season_type):
                 
                 fig.add_trace(
                     go.Scatter(
-                        x=trends_data["season"].to_list(),
-                        y=trends_data["avg_epa"].to_list(),
+                        x=trends_data["season"].tolist(),
+                        y=trends_data["avg_epa"].tolist(),
                         mode='lines+markers',
                         name='EPA per Play',
                         line=dict(color='green')
@@ -491,8 +495,8 @@ def show_individual_trends(pbp_data, seasons, position_groups, season_type):
                 
                 fig.add_trace(
                     go.Scatter(
-                        x=trends_data["season"].to_list(),
-                        y=trends_data["success_rate"].to_list(),
+                        x=trends_data["season"].tolist(),
+                        y=trends_data["success_rate"].tolist(),
                         mode='lines+markers',
                         name='Success Rate (%)',
                         line=dict(color='orange')

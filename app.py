@@ -48,15 +48,6 @@ def main():
 def show_home_page():
     """Home page with overview and getting started info"""
     st.title("🏈 NFL Analytics Dashboard")
-    st.markdown("### Welcome to your comprehensive NFL data analysis platform!")
-    
-    st.markdown("""
-    This application provides advanced analytics for NFL data using modern data tools:
-    - **Polars** for fast data processing
-    - **DuckDB** for analytical queries
-    - **Streamlit** for interactive visualization
-    - **nfl_data_py** for comprehensive NFL data
-    """)
     
     col1, col2, col3 = st.columns(3)
     
@@ -72,7 +63,7 @@ def show_home_page():
     with col2:
         st.markdown("""
         #### 🏃‍♂️ Skill Position Stats
-        - WR/TE and RB performance analysis
+        - WR (including TE) and RB performance analysis
         - Rushing and receiving metrics
         - Multi-season comparisons
         - EPA and success rate tracking
